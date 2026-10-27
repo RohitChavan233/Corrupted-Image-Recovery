@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #3e4451 #181a1f;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #181a1f;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #3e4451;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #4d78cc;
+  }
+}
+
+/* Custom smooth transitions and animations */
+.checkerboard-pattern {
+  background-color: #21252b;
+  background-image: 
+    linear-gradient(45deg, #1c2026 25%, transparent 25%), 
+    linear-gradient(-45deg, #1c2026 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #1c2026 75%), 
+    linear-gradient(-45deg, transparent 75%, #1c2026 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
