@@ -153,6 +153,18 @@ def api_raw_image(path: str = Query(...)):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path)
 
+@app.get("/api/images/download")
+def api_download_image(path: str = Query(...)):
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    filename = p.name
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 @app.post("/api/images/process")
 def api_process_image(req: ImageProcessRequest):
     try:

@@ -254,8 +254,14 @@ def process_image(
                 
         buffer = io.BytesIO()
         save_kwargs = {}
-        if target_fmt in ("JPEG", "WEBP"):
+        if target_fmt == "JPEG":
+            save_kwargs["quality"] = max(output_quality, 95)
+            save_kwargs["subsampling"] = 0
+            save_kwargs["optimize"] = True
+            save_kwargs["keep_rgb"] = True
+        elif target_fmt == "WEBP":
             save_kwargs["quality"] = output_quality
+            save_kwargs["method"] = 6
             
         img.save(buffer, format=target_fmt, **save_kwargs)
         return buffer.getvalue(), mime

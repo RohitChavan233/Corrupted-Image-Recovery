@@ -669,10 +669,11 @@ export const RecoveryStudio: React.FC = () => {
                         </div>
                         <button
                           onClick={() => handleExecuteSingleRecovery('extract_thumbnail')}
-                          className="w-full py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center justify-center space-x-1"
+                          className="w-full py-1 bg-xn-surface hover:bg-xn-hover border border-xn-border text-xn-text rounded text-xs font-medium flex items-center justify-center space-x-1 transition"
+                          title="Extract the low-resolution EXIF camera thumbnail only"
                         >
-                          <Download className="w-3 h-3" />
-                          <span>Export This Recovered Preview</span>
+                          <Download className="w-3 h-3 text-xn-textMuted" />
+                          <span>Extract Low-Res Thumbnail ({thumb.width}×{thumb.height})</span>
                         </button>
                       </div>
                     ))}
@@ -686,7 +687,7 @@ export const RecoveryStudio: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-green-400 text-xs flex items-center space-x-1.5">
                       <CheckCircle2 className="w-4 h-4 text-green-400" />
-                      <span>Recovery Completed — {singleRecoveryResult.recovered_count} File(s) Generated</span>
+                      <span>Recovery Completed — {singleRecoveryResult.recovered_count} File(s) Generated (Sorted by Quality)</span>
                     </span>
                   </div>
 
@@ -700,10 +701,28 @@ export const RecoveryStudio: React.FC = () => {
                             <div className="text-[10px] text-xn-textMuted">Preview Saved</div>
                           )}
                         </div>
-                        <div className="col-span-8 space-y-1 text-xs">
-                          <div className="font-bold text-xn-textBright">{art.method}</div>
+                        <div className="col-span-8 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <div className="font-bold text-xn-textBright flex items-center space-x-2">
+                              <span>{art.method}</span>
+                              {art.width >= 600 && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-green-950 border border-green-600 text-green-300 uppercase">
+                                  Full Resolution
+                                </span>
+                              )}
+                            </div>
+                            <a
+                              href={api.getDownloadUrl(art.filepath)}
+                              download={art.filename}
+                              className="px-2.5 py-1 bg-green-700 hover:bg-green-600 text-white rounded text-[11px] font-medium flex items-center space-x-1 shadow transition"
+                              title="Download full quality master file"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download High Quality</span>
+                            </a>
+                          </div>
                           <div className="text-[11px] text-xn-textMuted font-mono truncate">{art.filename}</div>
-                          <div className="text-[11px] text-xn-accent font-mono">{art.width} × {art.height} px ({(art.size / 1024).toFixed(1)} KB)</div>
+                          <div className="text-[11px] text-xn-accent font-mono font-semibold">{art.width} × {art.height} px ({(art.size / 1024).toFixed(1)} KB)</div>
                           <p className="text-[11px] text-xn-text">{art.description}</p>
                           <div className="text-[10px] text-green-400 font-mono truncate">Saved in: {art.filepath}</div>
                         </div>
@@ -713,17 +732,35 @@ export const RecoveryStudio: React.FC = () => {
                 </div>
               ) : (
                 /* Original File Display */
-                <div className="bg-xn-surface border border-xn-border rounded-lg p-3 flex flex-col items-center justify-center space-y-2">
-                  <span className="text-[11px] font-semibold text-xn-textMuted uppercase">Current File State in Memory:</span>
-                  <div className="max-h-80 bg-black/80 rounded overflow-hidden flex items-center justify-center p-2 checkerboard-pattern">
+                <div className="bg-xn-surface border border-xn-border rounded-lg p-4 flex flex-col items-center justify-center space-y-3">
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[11px] font-semibold text-xn-textMuted uppercase tracking-wide">
+                      Damaged File Preview (Current State)
+                    </span>
+                    <span className="text-[10px] text-amber-400 font-mono">
+                      {activeFile.name}
+                    </span>
+                  </div>
+                  <div className="max-h-80 w-full bg-black/80 rounded overflow-hidden flex items-center justify-center p-2 checkerboard-pattern">
                     <img
                       src={api.getRawImageUrl(activeFile.path)}
                       alt={activeFile.name}
                       className="max-h-72 object-contain"
                     />
                   </div>
-                  <div className="text-[11px] text-xn-textMuted text-center max-w-md">
-                    Click <strong>Auto-Recover Intact Previews</strong> above to inspect, carve embedded EXIF thumbnails, and repair missing termination markers.
+                  
+                  <div className="flex flex-col items-center space-y-2 pt-1 w-full max-w-md text-center">
+                    <button
+                      onClick={() => handleExecuteSingleRecovery('auto')}
+                      disabled={isRecoveringSingle}
+                      className="w-full py-2.5 px-4 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white rounded font-semibold text-xs flex items-center justify-center space-x-2 shadow-lg hover:shadow-green-500/20 transition cursor-pointer"
+                    >
+                      <Sparkles className="w-4 h-4 text-green-200" />
+                      <span>{isRecoveringSingle ? 'Reconstructing Photo at 100% Quality...' : '⚡ Reconstruct Full-Resolution Photo (100% Quality)'}</span>
+                    </button>
+                    <p className="text-[11px] text-xn-textMuted">
+                      Applies lossless bitstream repair, missing EOI termination, and Annex K quantization tables with zero downsampling (4:4:4 chroma, quality=100).
+                    </p>
                   </div>
                 </div>
               )}

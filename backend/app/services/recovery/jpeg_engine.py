@@ -49,7 +49,7 @@ STD_CHROMA_DQT = bytes([
 
 # Standard JPEG Annex K Baseline DC Luminance Huffman Table (Table 0, Class 0)
 STD_DC_LUMA_DHT = bytes.fromhex(
-    "00000105010101010100000000000000"
+    "0000010501010101010100000000000000"
     "000102030405060708090a0b"
 )
 
@@ -65,7 +65,7 @@ STD_AC_LUMA_DHT = bytes.fromhex(
 
 # Standard JPEG Annex K Baseline DC Chrominance Huffman Table (Table 1, Class 0)
 STD_DC_CHROMA_DHT = bytes.fromhex(
-    "01000301010101010101010100000000"
+    "0100030101010101010101010000000000"
     "000102030405060708090a0b"
 )
 
@@ -80,18 +80,26 @@ STD_AC_CHROMA_DHT = bytes.fromhex(
 )
 
 def build_standard_dqt_marker() -> bytes:
-    # 0xFFDB + len (2 bytes: 2 + 65 + 65 = 132) + table 0 (0x00 + 64 bytes) + table 1 (0x01 + 64 bytes)
-    payload = b"\x00" + STD_LUMA_DQT + b"\x01" + STD_CHROMA_DQT
-    return b"\xff\xdb" + struct.pack(">H", len(payload) + 2) + payload
+    dqt0 = b"\x00" + STD_LUMA_DQT
+    dqt1 = b"\x01" + STD_CHROMA_DQT
+    return (
+        b"\xff\xdb" + struct.pack(">H", len(dqt0) + 2) + dqt0 +
+        b"\xff\xdb" + struct.pack(">H", len(dqt1) + 2) + dqt1
+    )
 
 def build_standard_dht_marker() -> bytes:
-    payload = STD_DC_LUMA_DHT + STD_AC_LUMA_DHT + STD_DC_CHROMA_DHT + STD_AC_CHROMA_DHT
-    return b"\xff\xc4" + struct.pack(">H", len(payload) + 2) + payload
+    return (
+        b"\xff\xc4" + struct.pack(">H", len(STD_DC_LUMA_DHT) + 2) + STD_DC_LUMA_DHT +
+        b"\xff\xc4" + struct.pack(">H", len(STD_AC_LUMA_DHT) + 2) + STD_AC_LUMA_DHT +
+        b"\xff\xc4" + struct.pack(">H", len(STD_DC_CHROMA_DHT) + 2) + STD_DC_CHROMA_DHT +
+        b"\xff\xc4" + struct.pack(">H", len(STD_AC_CHROMA_DHT) + 2) + STD_AC_CHROMA_DHT
+    )
 
 def build_standard_jfif_marker() -> bytes:
     return b"\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
 
 def build_standard_sof0_marker(width: int = 1200, height: int = 800) -> bytes:
+    # 8-bit precision, height, width, 3 color components: Y (2x2, Q=0), Cb (1x1, Q=1), Cr (1x1, Q=1)
     payload = struct.pack(">BHHB", 8, max(height, 100), max(width, 100), 3) + b"\x01\x22\x00\x02\x11\x01\x03\x11\x01"
     return b"\xff\xc0" + struct.pack(">H", len(payload) + 2) + payload
 
@@ -412,7 +420,7 @@ def carve_all_jpegs_in_bytes(data: bytes) -> List[EmbeddedPreview]:
 def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[RecoveryArtifact]:
     """
     Advanced JPEG Repair Engine executing precision repairs:
-    - 'smart_auto': multi-pass recovery (carving, donor headers, scanline reconstruction, byte stuffing fixes)
+    - 'smart_auto': multi-pass recovery (lossless bitstream repair, scanline salvage, donor headers, carving)
     - 'graft_baseline_header': inject standard Annex K baseline DQT/DHT/JFIF headers
     - 'repair_byte_stuffing': sanitize rogue 0xFF bytes in entropy scan
     - 'fix_eoi_and_salvage': append missing EOI and reconstruct scanlines
@@ -423,34 +431,107 @@ def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[R
     analysis = analyze_jpeg_deep(filepath)
     artifacts: List[RecoveryArtifact] = []
 
-    # 1. Carve Embedded Previews
-    if action in ("smart_auto", "carve_embedded_previews") and analysis.embedded_previews:
-        for i, prev in enumerate(analysis.embedded_previews):
-            chunk = raw_data[prev.offset : prev.offset + prev.size]
-            out_name = f"{p.stem}_carved_preview_{i+1}.jpg"
-            out_file = output_dir / out_name
-            out_file.write_bytes(chunk)
-            artifacts.append(RecoveryArtifact(
-                method="Carved Embedded Preview",
-                filename=out_name,
-                filepath=str(out_file.resolve()),
-                width=prev.width,
-                height=prev.height,
-                size=len(chunk),
-                preview_base64=prev.preview_base64,
-                description=f"Carved 100% uncorrupted {prev.width}x{prev.height} preview from offset {prev.offset}."
-            ))
+    # 1. Full-Resolution Scanline Salvage & Lossless Stream Repair (Highest Priority!)
+    if action in ("smart_auto", "fix_eoi_and_salvage", "render_partial_scanlines"):
+        # A. Direct Lossless Bitstream Repair (Zero re-compression loss!)
+        if not raw_data.endswith(b"\xff\xd9"):
+            try:
+                lossless_bytes = raw_data + b"\xff\xd9"
+                with Image.open(io.BytesIO(lossless_bytes)) as test_l:
+                    w, h = test_l.size
+                    test_l.load()
+                    out_name = f"{p.stem}_lossless_stream_repaired.jpg"
+                    out_file = output_dir / out_name
+                    out_file.write_bytes(lossless_bytes)
 
-    # 2. Header Grafting (Donor Header Injection)
+                    buf = io.BytesIO()
+                    test_l.save(buf, "JPEG", quality=95)
+                    b64 = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+                    artifacts.append(RecoveryArtifact(
+                        method="Lossless Bitstream Repair (0% Quality Loss)",
+                        filename=out_name,
+                        filepath=str(out_file.resolve()),
+                        width=w,
+                        height=h,
+                        size=len(lossless_bytes),
+                        preview_base64=b64,
+                        description="Repaired JPEG stream without re-compression. Original camera quantization and pixels 100% preserved."
+                    ))
+            except Exception:
+                pass
+
+        # B. High-Resolution Scanline Reconstruction (100% Quality, 4:4:4 Chroma Subsampling)
+        try:
+            with Image.open(io.BytesIO(raw_data)) as img:
+                w, h = img.size
+                out_name = f"{p.stem}_high_quality_full_res.jpg"
+                out_file = output_dir / out_name
+                clean = img.convert("RGB")
+                
+                # Maximum JPEG Quality with NO chroma downsampling (subsampling=0)
+                clean.save(
+                    str(out_file),
+                    "JPEG",
+                    quality=100,
+                    subsampling=0,
+                    optimize=True,
+                    keep_rgb=True
+                )
+
+                # Also save a true Lossless PNG copy for zero compression loss
+                png_name = f"{p.stem}_lossless_master.png"
+                png_file = output_dir / png_name
+                clean.save(str(png_file), "PNG", optimize=True)
+
+                buf = io.BytesIO()
+                clean.save(buf, "JPEG", quality=95)
+                b64 = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+                artifacts.append(RecoveryArtifact(
+                    method="Full-Resolution Reconstruction (Max 100% Quality)",
+                    filename=out_name,
+                    filepath=str(out_file.resolve()),
+                    width=w,
+                    height=h,
+                    size=out_file.stat().st_size,
+                    preview_base64=b64,
+                    description="Decoded all scanlines with 4:4:4 chroma (subsampling=0) and quality=100 for maximum fidelity."
+                ))
+
+                artifacts.append(RecoveryArtifact(
+                    method="Lossless Master Export (PNG)",
+                    filename=png_name,
+                    filepath=str(png_file.resolve()),
+                    width=w,
+                    height=h,
+                    size=png_file.stat().st_size,
+                    preview_base64=b64,
+                    description=f"Lossless PNG export with zero compression artifacts at {w}x{h} native resolution."
+                ))
+        except Exception:
+            if not raw_data.endswith(b"\xff\xd9"):
+                repaired = raw_data + b"\xff\xd9"
+                out_name = f"{p.stem}_eoi_fixed.jpg"
+                out_file = output_dir / out_name
+                out_file.write_bytes(repaired)
+                artifacts.append(RecoveryArtifact(
+                    method="EOI Terminator Appended",
+                    filename=out_name,
+                    filepath=str(out_file.resolve()),
+                    width=analysis.decoded_width,
+                    height=analysis.decoded_height,
+                    size=len(repaired),
+                    preview_base64=None,
+                    description="Appended missing 0xFFD9 EOI marker to raw bitstream."
+                ))
+
+    # 2. Header Grafting (Donor Header Injection at 100% Quality)
     if action in ("smart_auto", "graft_baseline_header") and (not analysis.to_dict()["has_dqt"] or not analysis.to_dict()["has_dht"] or not analysis.to_dict()["has_soi"]):
         try:
-            # Build clean donor header: SOI + JFIF + DQT + DHT
             donor_header = b"\xff\xd8" + build_standard_jfif_marker() + build_standard_dqt_marker() + build_standard_dht_marker()
-            
-            # Find where SOS begins or where scan data begins
             sos_pos = raw_data.find(b"\xff\xda")
             if sos_pos != -1:
-                # Include existing SOF if present
                 sof_pos = -1
                 for marker in (b"\xff\xc0", b"\xff\xc1", b"\xff\xc2"):
                     sof_pos = raw_data.find(marker)
@@ -466,7 +547,6 @@ def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[R
                     target_h = analysis.decoded_height or 800
                     repaired_data = donor_header + build_standard_sof0_marker(target_w, target_h) + raw_data[sos_pos:]
             else:
-                # Strip leading junk up to first 0xFF
                 first_ff = raw_data.find(b"\xff")
                 if first_ff != -1:
                     repaired_data = donor_header + raw_data[first_ff:]
@@ -480,26 +560,49 @@ def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[R
                 w, h = r_img.size
                 out_name = f"{p.stem}_grafted_header.jpg"
                 out_file = output_dir / out_name
-                r_img.save(str(out_file), "JPEG", quality=92)
+                r_img.save(
+                    str(out_file),
+                    "JPEG",
+                    quality=100,
+                    subsampling=0,
+                    optimize=True,
+                    keep_rgb=True
+                )
                 
+                # Lossless PNG copy of grafted image
+                png_name = f"{p.stem}_grafted_master.png"
+                png_file = output_dir / png_name
+                r_img.save(str(png_file), "PNG", optimize=True)
+
                 buf = io.BytesIO()
-                r_img.save(buf, "JPEG", quality=90)
+                r_img.save(buf, "JPEG", quality=95)
                 b64 = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
 
                 artifacts.append(RecoveryArtifact(
-                    method="Baseline Header Grafting",
+                    method="Baseline Header Grafting (Max Quality)",
                     filename=out_name,
                     filepath=str(out_file.resolve()),
                     width=w,
                     height=h,
                     size=out_file.stat().st_size,
                     preview_base64=b64,
-                    description="Grafted standard baseline Quantization and Huffman tables into damaged stream."
+                    description="Grafted standard baseline Quantization and Huffman tables and exported at 100% quality."
+                ))
+
+                artifacts.append(RecoveryArtifact(
+                    method="Lossless Master Export (PNG)",
+                    filename=png_name,
+                    filepath=str(png_file.resolve()),
+                    width=w,
+                    height=h,
+                    size=png_file.stat().st_size,
+                    preview_base64=b64,
+                    description=f"Lossless PNG export of grafted photo at {w}x{h} native resolution."
                 ))
         except Exception:
             pass
 
-    # 3. Rogue 0xFF Byte-Stuffing Repair
+    # 3. Rogue 0xFF Byte-Stuffing Repair (Max Quality)
     if action in ("smart_auto", "repair_byte_stuffing") and "repair_byte_stuffing" in analysis.available_repairs:
         try:
             sos_pos = raw_data.find(b"\xff\xda")
@@ -510,7 +613,6 @@ def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[R
                 header_part = raw_data[:scan_start]
                 scan_part = raw_data[scan_start:]
                 
-                # Sanitize scan_part: escape unescaped 0xFF
                 sanitized_scan = bytearray()
                 i = 0
                 while i < len(scan_part):
@@ -523,7 +625,7 @@ def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[R
                                 sanitized_scan.append(next_b)
                                 i += 1
                             else:
-                                sanitized_scan.append(0x00) # Escape it
+                                sanitized_scan.append(0x00)
                         else:
                             sanitized_scan.append(0x00)
                     i += 1
@@ -536,65 +638,50 @@ def repair_jpeg_advanced(filepath: str, action: str, output_dir: Path) -> List[R
                     w, h = b_img.size
                     out_name = f"{p.stem}_sanitized_stuffing.jpg"
                     out_file = output_dir / out_name
-                    b_img.save(str(out_file), "JPEG", quality=92)
+                    b_img.save(
+                        str(out_file),
+                        "JPEG",
+                        quality=100,
+                        subsampling=0,
+                        optimize=True,
+                        keep_rgb=True
+                    )
                     
                     buf = io.BytesIO()
-                    b_img.save(buf, "JPEG", quality=90)
+                    b_img.save(buf, "JPEG", quality=95)
                     b64 = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
 
                     artifacts.append(RecoveryArtifact(
-                        method="Byte-Stuffing Error Repair",
+                        method="Byte-Stuffing Error Repair (Max Quality)",
                         filename=out_name,
                         filepath=str(out_file.resolve()),
                         width=w,
                         height=h,
                         size=out_file.stat().st_size,
                         preview_base64=b64,
-                        description="Escaped rogue 0xFF bytes inside entropy-coded scanlines."
+                        description="Escaped rogue 0xFF bytes inside entropy scanlines and saved at 100% quality."
                     ))
         except Exception:
             pass
 
-    # 4. Partial Scanline Salvage & EOI Repair
-    if action in ("smart_auto", "fix_eoi_and_salvage", "render_partial_scanlines"):
-        try:
-            with Image.open(io.BytesIO(raw_data)) as img:
-                w, h = img.size
-                out_name = f"{p.stem}_salvaged_scanlines.jpg"
-                out_file = output_dir / out_name
-                clean = img.convert("RGB")
-                clean.save(str(out_file), "JPEG", quality=92)
-                
-                buf = io.BytesIO()
-                clean.save(buf, "JPEG", quality=90)
-                b64 = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+    # 4. Embedded Previews Carving (Secondary / Fallback)
+    if action in ("smart_auto", "carve_embedded_previews") and analysis.embedded_previews:
+        for i, prev in enumerate(analysis.embedded_previews):
+            chunk = raw_data[prev.offset : prev.offset + prev.size]
+            out_name = f"{p.stem}_carved_preview_{i+1}.jpg"
+            out_file = output_dir / out_name
+            out_file.write_bytes(chunk)
+            artifacts.append(RecoveryArtifact(
+                method="Embedded EXIF Preview (Camera Thumbnail)",
+                filename=out_name,
+                filepath=str(out_file.resolve()),
+                width=prev.width,
+                height=prev.height,
+                size=len(chunk),
+                preview_base64=prev.preview_base64,
+                description=f"Carved embedded preview thumbnail ({prev.width}x{prev.height}) from EXIF header."
+            ))
 
-                artifacts.append(RecoveryArtifact(
-                    method="Partial Scanline Salvage",
-                    filename=out_name,
-                    filepath=str(out_file.resolve()),
-                    width=w,
-                    height=h,
-                    size=out_file.stat().st_size,
-                    preview_base64=b64,
-                    description="Decoded all available scanlines up to point of failure with clean EOI termination."
-                ))
-        except Exception:
-            # Fallback: append 0xFFD9
-            if not raw_data.endswith(b"\xff\xd9"):
-                repaired = raw_data + b"\xff\xd9"
-                out_name = f"{p.stem}_eoi_fixed.jpg"
-                out_file = output_dir / out_name
-                out_file.write_bytes(repaired)
-                artifacts.append(RecoveryArtifact(
-                    method="EOI Terminator Appended",
-                    filename=out_name,
-                    filepath=str(out_file.resolve()),
-                    width=analysis.decoded_width,
-                    height=analysis.decoded_height,
-                    size=len(repaired),
-                    preview_base64=None,
-                    description="Appended missing 0xFFD9 EOI marker."
-                ))
-
+    # CRITICAL: Sort all artifacts so HIGHEST RESOLUTION (width * height) is always FIRST!
+    artifacts.sort(key=lambda a: (a.width * a.height, a.size), reverse=True)
     return artifacts

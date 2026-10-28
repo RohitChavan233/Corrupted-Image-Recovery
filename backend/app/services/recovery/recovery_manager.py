@@ -70,6 +70,9 @@ def execute_advanced_recovery(
         if carved:
             artifacts.extend(carved)
 
+    # CRITICAL: Always ensure highest resolution artifacts are sorted to the very top
+    artifacts.sort(key=lambda a: (a.width * a.height, a.size), reverse=True)
+
     # Format recovery files
     recovered_files = [
         {

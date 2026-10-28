@@ -85,6 +85,10 @@ export const api = {
     return `${API_BASE}/images/raw?path=${encodeURIComponent(path)}`;
   },
 
+  getDownloadUrl: (path: string): string => {
+    return `${API_BASE}/images/download?path=${encodeURIComponent(path)}`;
+  },
+
   // Metadata
   getMetadata: async (path: string): Promise<ExifData> => {
     const res = await fetch(`${API_BASE}/metadata?path=${encodeURIComponent(path)}`);
