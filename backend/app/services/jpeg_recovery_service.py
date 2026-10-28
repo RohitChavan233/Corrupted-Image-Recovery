@@ -37,6 +37,8 @@ def perform_jpeg_recovery(
     action_map = {
         "auto": "smart_auto",
         "thumbnail_fusion": "thumbnail_fusion",
+        "pristine_crop": "pristine_crop",
+        "inpainted_fill": "inpainted_fill",
         "thumbnail_hd": "thumbnail_hd",
         "donor_reference": "donor_reference",
         "extract_thumbnail": "carve_embedded_previews",
@@ -71,6 +73,8 @@ def batch_recover_jpegs(
     action_map = {
         "auto": "smart_auto",
         "thumbnail_fusion": "thumbnail_fusion",
+        "pristine_crop": "pristine_crop",
+        "inpainted_fill": "inpainted_fill",
         "thumbnail_hd": "thumbnail_hd",
         "donor_reference": "donor_reference",
         "extract_thumbnail": "carve_embedded_previews",

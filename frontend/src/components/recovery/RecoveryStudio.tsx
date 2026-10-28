@@ -225,8 +225,10 @@ export const RecoveryStudio: React.FC = () => {
                 disabled={isRecoveringSingle || isLoadingSingle || !activeFile}
                 className="bg-xn-bg border border-xn-border rounded px-2 py-1 text-xs text-xn-textBright outline-none cursor-pointer"
               >
-                <option value="auto">⚡ Smart Auto (Fusion + Donor + Bitstream)</option>
+                <option value="auto">⚡ Smart Auto (Fusion + Crop + Donor + Bitstream)</option>
                 <option value="thumbnail_fusion">🪄 Thumbnail-Guided Fusion (0% Grey)</option>
+                <option value="pristine_crop">✂️ Pristine Native Crop (0% Grey Blocks)</option>
+                <option value="inpainted_fill">🎨 Context-Aware Inpainted Fill</option>
                 <option value="thumbnail_hd">✨ Enhanced HD Thumbnail (Upscaled)</option>
                 <option value="donor_reference">📷 Donor Reference Photo Grafting</option>
                 <option value="donor_header">🧩 Baseline Header Grafting (Annex K Tables)</option>
@@ -357,8 +359,10 @@ export const RecoveryStudio: React.FC = () => {
                     onChange={(e) => setBatchRecoveryType(e.target.value)}
                     className="bg-xn-bg border border-xn-border rounded px-2 py-1 text-xs text-xn-textBright outline-none cursor-pointer"
                   >
-                    <option value="auto">⚡ Smart Auto (Multi-Pass: Fusion + Donor Graft + Bitstream)</option>
+                    <option value="auto">⚡ Smart Auto (Multi-Pass: Fusion + Crop + Donor Graft + Bitstream)</option>
                     <option value="thumbnail_fusion">🪄 Thumbnail-Guided Fusion (0% Grey Blocks)</option>
+                    <option value="pristine_crop">✂️ Pristine Native Crop (0% Grey Blocks)</option>
+                    <option value="inpainted_fill">🎨 Context-Aware Inpainted Fill</option>
                     <option value="thumbnail_hd">✨ Enhanced HD Thumbnail (Upscaled)</option>
                     <option value="extract_thumbnail">🖼️ Carve Embedded EXIF Previews Only</option>
                     <option value="render_partial">📐 Render Partial Scanlines with EOI / IEND Repair</option>
