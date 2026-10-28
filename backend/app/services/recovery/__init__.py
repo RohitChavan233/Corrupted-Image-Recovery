@@ -4,7 +4,8 @@ from .recovery_manager import (
     execute_advanced_recovery,
     batch_scan_advanced,
     batch_recover_advanced,
-    detect_image_format
+    detect_image_format,
+    suggest_donors_in_folder
 )
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "execute_advanced_recovery",
     "batch_scan_advanced",
     "batch_recover_advanced",
-    "detect_image_format"
+    "detect_image_format",
+    "suggest_donors_in_folder"
 ]

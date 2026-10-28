@@ -45,7 +45,8 @@ def analyze_image_deep(filepath: str) -> ImageAnalysisResult:
 def execute_advanced_recovery(
     filepath: str,
     action: str = "smart_auto",
-    output_dir: Optional[str] = None
+    output_dir: Optional[str] = None,
+    donor_filepath: Optional[str] = None
 ) -> Dict[str, Any]:
     target_dir = Path(output_dir) if output_dir else RECOVERED_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -62,7 +63,7 @@ def execute_advanced_recovery(
     elif fmt == "BMP":
         artifacts = repair_bmp_advanced(filepath, action, target_dir)
     else:
-        artifacts = repair_jpeg_advanced(filepath, action, target_dir)
+        artifacts = repair_jpeg_advanced(filepath, action, target_dir, donor_filepath=donor_filepath)
 
     # If primary repair yielded 0 artifacts and action was smart_auto, attempt deep carver fallback
     if len(artifacts) == 0 and action in ("smart_auto", "auto"):
@@ -70,8 +71,9 @@ def execute_advanced_recovery(
         if carved:
             artifacts.extend(carved)
 
-    # CRITICAL: Always ensure highest resolution artifacts are sorted to the very top
-    artifacts.sort(key=lambda a: (a.width * a.height, a.size), reverse=True)
+    # For non-JPEG formats, ensure resolution sort
+    if fmt != "JPEG":
+        artifacts.sort(key=lambda a: (a.width * a.height, a.size), reverse=True)
 
     # Format recovery files
     recovered_files = [
@@ -176,3 +178,46 @@ def batch_recover_advanced(
         "output_dir": str(target_dir.resolve()),
         "results": results
     }
+
+def suggest_donors_in_folder(filepath: str) -> List[Dict[str, Any]]:
+    """
+    Scans the folder of filepath for candidate intact reference/donor photos taken by the same camera.
+    """
+    from PIL import Image
+    from .jpeg_engine import detect_grey_corruption
+
+    p = Path(filepath)
+    parent = p.parent
+    if not parent.is_dir():
+        return []
+
+    donors = []
+    # Search for candidate JPEGs in the same folder
+    candidates = []
+    prefix = p.stem[:11] if len(p.stem) >= 11 else p.stem[:7]
+    for f in parent.glob("*.jpg"):
+        if f.resolve() == p.resolve():
+            continue
+        candidates.append(f)
+
+    # Sort candidates by same prefix priority
+    candidates.sort(key=lambda f: (1 if f.stem.startswith(prefix) else 0, f.stat().st_size), reverse=True)
+
+    for cand in candidates[:15]:
+        try:
+            with Image.open(cand) as test_img:
+                test_img.load()
+                has_grey, _, _ = detect_grey_corruption(test_img)
+                if not has_grey and test_img.width >= 800:
+                    donors.append({
+                        "path": str(cand.resolve()),
+                        "name": cand.name,
+                        "size": cand.stat().st_size,
+                        "width": test_img.width,
+                        "height": test_img.height,
+                        "is_same_session": cand.stem.startswith(prefix)
+                    })
+        except Exception:
+            continue
+
+    return donors

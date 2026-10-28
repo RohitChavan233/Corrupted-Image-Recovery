@@ -132,15 +132,28 @@ export const api = {
     return res.json();
   },
 
-  executeRecovery: async (filepath: string, recoveryType: string = 'auto'): Promise<RecoveryExecutionResult> => {
+  executeRecovery: async (filepath: string, recoveryType: string = 'auto', donorFilepath?: string): Promise<RecoveryExecutionResult> => {
     const res = await fetch(`${API_BASE}/recovery/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filepath, recovery_type: recoveryType }),
+      body: JSON.stringify({ 
+        filepath, 
+        recovery_type: recoveryType,
+        donor_filepath: donorFilepath 
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Failed to execute recovery' }));
       throw new Error(err.detail || 'Failed to execute recovery');
+    }
+    return res.json();
+  },
+
+  suggestDonors: async (filepath: string): Promise<{ donors: Array<{ path: string; name: string; size: number; width: number; height: number; is_same_session: boolean }> }> => {
+    const res = await fetch(`${API_BASE}/recovery/suggest-donors?path=${encodeURIComponent(filepath)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to suggest donors' }));
+      throw new Error(err.detail || 'Failed to suggest donors');
     }
     return res.json();
   },

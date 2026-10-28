@@ -14,7 +14,8 @@ from .services.jpeg_recovery_service import (
     analyze_jpeg, 
     perform_jpeg_recovery, 
     batch_scan_corrupted_jpegs, 
-    batch_recover_jpegs
+    batch_recover_jpegs,
+    get_suggested_donors
 )
 from .services.duplicate_service import scan_folder_for_duplicates
 from .services.screenshot_service import capture_desktop_screenshot
@@ -74,6 +75,7 @@ class ImageProcessRequest(BaseModel):
 class JpegRecoveryRequest(BaseModel):
     filepath: str
     recovery_type: str = "auto"
+    donor_filepath: Optional[str] = None
 
 class BatchJobRequest(BaseModel):
     file_list: List[str]
@@ -252,9 +254,16 @@ def api_inspect_jpeg(path: str = Query(...)):
 @app.post("/api/recovery/execute")
 def api_execute_recovery(req: JpegRecoveryRequest):
     try:
-        return perform_jpeg_recovery(req.filepath, req.recovery_type)
+        return perform_jpeg_recovery(req.filepath, req.recovery_type, donor_filepath=req.donor_filepath)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/recovery/suggest-donors")
+def api_suggest_donors(path: str = Query(...)):
+    try:
+        return {"donors": get_suggested_donors(path)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/recovery/batch-scan")
 def api_batch_scan_recovery(req: BatchRecoveryScanRequest):
